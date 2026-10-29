@@ -1,0 +1,13 @@
+{
+  "name": "Calculadora Pro",
+  "short_name": "Calc Pro",
+  "description": "Calculadora com modos padrão, científico e conversor de unidades.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070c17",
+  "theme_color": "#2563eb",
+  "icons": []
+}
