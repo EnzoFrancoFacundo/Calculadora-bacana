@@ -1,7 +1,5 @@
 /* ============================================================
-   CONVERSOR DE UNIDADES
-   Componente React usando htm (sem JSX, sem Babel).
-   Funciona em file:// porque não depende de fetch de .jsx.
+   CONVERSOR DE UNIDADES — versão robusta
    ============================================================ */
 (function () {
   const { useState, useMemo } = React;
@@ -18,32 +16,76 @@
     return c + 273.15;
   }
 
-  function Converter() {
+  /* ErrorBoundary local — se o conversor quebrar, o resto do app continua */
+  class ConverterErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { error: null }; }
+    static getDerivedStateFromError(error) { return { error }; }
+    componentDidCatch(error, info) {
+      console.error("[ConverterErrorBoundary] erro:", error);
+      console.error("[ConverterErrorBoundary] stack:", info && info.componentStack);
+    }
+    render() {
+      if (this.state.error) {
+        const e = this.state.error;
+        return html`<div style=${{
+          padding: 20, margin: 16, background: "#fee2e2", color: "#7f1d1d",
+          borderRadius: 12, fontFamily: "ui-monospace, Menlo, monospace",
+          fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word",
+          border: "2px solid #dc2626",
+        }}>
+          <div style=${{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>
+            ⚠️ Erro no conversor — copie e me envie:
+          </div>
+          ${String(e && (e.stack || e.message) || e)}
+        </div>`;
+      }
+      return this.props.children;
+    }
+  }
+
+  function ConverterInner() {
     const [catId, setCatId] = useState("comprimento");
     const cat = CONV_CATEGORIES.find((c) => c.id === catId);
 
-    const [from, setFrom] = useState(cat.units[0][0]);
-    const [to, setTo] = useState(cat.units[1][0]);
+    const safeUnits = (cat && Array.isArray(cat.units)) ? cat.units : [];
+    const initialFrom = safeUnits[0] ? safeUnits[0][0] : "";
+    const initialTo   = safeUnits[1] ? safeUnits[1][0] : initialFrom;
+
+    const [from, setFrom] = useState(initialFrom);
+    const [to, setTo]     = useState(initialTo);
     const [value, setValue] = useState("1");
 
-    /* Troca de categoria: reseta from/to NO MESMO LOTE
-       (evita render intermediário com unidades inválidas) */
     const switchCat = (id) => {
       if (id === catId) return;
-      const next = CONV_CATEGORIES.find((c) => c.id === id);
-      setCatId(id);
-      setFrom(next.units[0][0]);
-      setTo(next.units[1][0]);
+      try {
+        const next = CONV_CATEGORIES.find((c) => c.id === id);
+        if (!next || !Array.isArray(next.units) || next.units.length < 2) return;
+        setCatId(id);
+        setFrom(next.units[0][0]);
+        setTo(next.units[1][0]);
+      } catch (err) {
+        console.error("[switchCat]", err);
+      }
     };
 
     const result = useMemo(() => {
-      const num = parseFloat(String(value).replace(",", "."));
-      if (!Number.isFinite(num)) return null;
-      if (cat.temp) return convertTemperature(num, from, to);
-      const unitFrom = cat.units.find((u) => u[0] === from);
-      const unitTo = cat.units.find((u) => u[0] === to);
-      if (!unitFrom || !unitTo) return null;   // ← proteção
-      return (num * unitFrom[2]) / unitTo[2];
+      try {
+        if (!cat || !Array.isArray(cat.units)) return null;
+        const num = parseFloat(String(value).replace(",", "."));
+        if (!Number.isFinite(num)) return null;
+        if (cat.temp) {
+          const r = convertTemperature(num, from, to);
+          return Number.isFinite(r) ? r : null;
+        }
+        const unitFrom = cat.units.find((u) => u[0] === from);
+        const unitTo   = cat.units.find((u) => u[0] === to);
+        if (!unitFrom || !unitTo) return null;
+        const r = (num * unitFrom[2]) / unitTo[2];
+        return Number.isFinite(r) ? r : null;
+      } catch (err) {
+        console.error("[Converter result]", err);
+        return null;
+      }
     }, [value, from, to, cat]);
 
     const swap = () => { setFrom(to); setTo(from); };
@@ -79,14 +121,14 @@
           <div className="field">
             <label htmlFor="conv-from">De</label>
             <select id="conv-from" value=${from} onChange=${(e) => setFrom(e.target.value)}>
-              ${cat.units.map(([id, name]) => html`<option key=${id} value=${id}>${name}</option>`)}
+              ${safeUnits.map(([id, name]) => html`<option key=${id} value=${id}>${name}</option>`)}
             </select>
           </div>
           <button type="button" className="conv-swap" onClick=${swap} aria-label="Inverter unidades">⇄</button>
           <div className="field">
             <label htmlFor="conv-to">Para</label>
             <select id="conv-to" value=${to} onChange=${(e) => setTo(e.target.value)}>
-              ${cat.units.map(([id, name]) => html`<option key=${id} value=${id}>${name}</option>`)}
+              ${safeUnits.map(([id, name]) => html`<option key=${id} value=${id}>${name}</option>`)}
             </select>
           </div>
         </div>
@@ -97,6 +139,10 @@
         </div>
       </section>
     `;
+  }
+
+  function Converter() {
+    return html`<${ConverterErrorBoundary}><${ConverterInner} /></${ConverterErrorBoundary}>`;
   }
 
   window.Converter = Converter;

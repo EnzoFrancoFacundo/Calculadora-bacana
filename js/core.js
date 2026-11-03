@@ -1,8 +1,5 @@
 /* ============================================================
    NÚCLEO MATEMÁTICO
-   Tokenizer + parser descendente recursivo (sem eval — seguro)
-   Todas as declarações são globais (classic script) para serem
-   visíveis aos arquivos .jsx transpilados pelo Babel.
    ============================================================ */
 
 function factorial(n) {
@@ -58,8 +55,6 @@ function tokenize(src) {
   while (i < src.length) {
     const c = src[i];
     if (c === " ") { i++; continue; }
-
-    /* Números (com notação científica 1e-5) */
     if (/[0-9.]/.test(c)) {
       let num = "";
       while (i < src.length && /[0-9.]/.test(src[i])) { num += src[i]; i++; }
@@ -72,17 +67,13 @@ function tokenize(src) {
       tokens.push({ t: "num", v: parseFloat(num) });
       continue;
     }
-
-    /* Nomes: funções e constantes */
     if (/[a-zA-Z]/.test(c)) {
       let name = "";
       while (i < src.length && /[a-zA-Z]/.test(src[i])) { name += src[i]; i++; }
       tokens.push({ t: "name", v: name.toLowerCase() });
       continue;
     }
-
     if ("+-*/^%!()".includes(c)) { tokens.push({ t: "op", v: c }); i++; continue; }
-
     throw new Error("Caractere inválido: " + c);
   }
   return tokens;
@@ -91,7 +82,6 @@ function tokenize(src) {
 function evaluateExpression(src, angleMode) {
   const tokens = tokenize(src);
   if (tokens.length === 0) throw new Error("Expressão vazia");
-
   let pos = 0;
   const peek = () => tokens[pos];
   const atEnd = () => pos >= tokens.length;
@@ -106,7 +96,6 @@ function evaluateExpression(src, angleMode) {
     }
     return left;
   }
-
   function parseTerm() {
     let left = parseUnary();
     while (!atEnd() && peek().t === "op" && (peek().v === "*" || peek().v === "/")) {
@@ -121,7 +110,6 @@ function evaluateExpression(src, angleMode) {
     }
     return left;
   }
-
   function parseUnary() {
     if (!atEnd() && peek().t === "op" && (peek().v === "-" || peek().v === "+")) {
       const op = tokens[pos++].v;
@@ -130,7 +118,6 @@ function evaluateExpression(src, angleMode) {
     }
     return parsePower();
   }
-
   function parsePower() {
     const base = parsePostfix();
     if (isOp("^")) {
@@ -142,7 +129,6 @@ function evaluateExpression(src, angleMode) {
     }
     return base;
   }
-
   function parsePostfix() {
     let v = parsePrimary();
     while (!atEnd() && peek().t === "op" && (peek().v === "!" || peek().v === "%")) {
@@ -151,13 +137,10 @@ function evaluateExpression(src, angleMode) {
     }
     return v;
   }
-
   function parsePrimary() {
     if (atEnd()) throw new Error("Expressão incompleta");
     const t = peek();
-
     if (t.t === "num") { pos++; return t.v; }
-
     if (t.t === "op" && t.v === "(") {
       pos++;
       const v = parseExpr();
@@ -165,7 +148,6 @@ function evaluateExpression(src, angleMode) {
       pos++;
       return v;
     }
-
     if (t.t === "name") {
       pos++;
       if (t.v === "pi") return Math.PI;
@@ -177,7 +159,6 @@ function evaluateExpression(src, angleMode) {
       pos++;
       return applyFn(t.v, arg, angleMode);
     }
-
     throw new Error("Expressão inválida");
   }
 
@@ -186,7 +167,6 @@ function evaluateExpression(src, angleMode) {
   return result;
 }
 
-/* Precisão decimal: corrige 0.1 + 0.2 = 0.30000000000000004 */
 function cleanNumber(n) {
   if (Number.isNaN(n)) throw new Error("Operação inválida");
   if (!Number.isFinite(n)) throw new Error("Resultado fora dos limites numéricos");
@@ -203,7 +183,6 @@ function balanceParens(s) {
   return s + ")".repeat(open);
 }
 
-/* Prévia em tempo real: tolera expressões ainda incompletas */
 function previewEval(expr, angleMode) {
   if (!expr || !expr.trim()) return null;
   let e = expr.replace(/[+\-*/^]+$/, "");
@@ -217,18 +196,29 @@ function previewEval(expr, angleMode) {
   }
 }
 
-/* Formatação pt-BR para exibição */
+/* ============================================================
+   FORMATAÇÃO — versão à prova de falhas
+   ============================================================ */
 function formatNumber(n) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "0";
-  if (!Number.isFinite(n)) return "Erro";
-  const abs = Math.abs(n);
-  if (abs !== 0 && (abs < 1e-9 || abs >= 1e12)) {
-    return n.toExponential(6).replace(".", ",");
+  try {
+    if (n === null || n === undefined) return "0";
+    if (typeof n === "number" && Number.isNaN(n)) return "0";
+    if (typeof n === "number" && !Number.isFinite(n)) return "Erro";
+    if (typeof n !== "number") return String(n);
+    if (Object.is(n, -0)) return "0";
+    const abs = Math.abs(n);
+    if (abs !== 0 && (abs < 1e-9 || abs >= 1e12)) {
+      return n.toExponential(6).replace(".", ",");
+    }
+    return n.toLocaleString("pt-BR", { maximumFractionDigits: 10 });
+  } catch (err) {
+    console.error("[formatNumber] falhou para", n, err);
+    return "Erro";
   }
-  return n.toLocaleString("pt-BR", { maximumFractionDigits: 10 });
 }
 
 function formatExpr(expr) {
+  if (typeof expr !== "string") return "";
   return expr
     .replace(/\*/g, "×")
     .replace(/\//g, "÷")

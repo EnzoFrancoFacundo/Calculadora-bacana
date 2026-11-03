@@ -1,11 +1,37 @@
 /* ============================================================
    APP PRINCIPAL
-   Componente React usando htm (sem JSX, sem Babel).
    ============================================================ */
 (function () {
   const { useState, useMemo, useCallback, useEffect, useRef } = React;
   const html = window.html;
   const Converter = window.Converter;
+
+  /* ErrorBoundary global — nunca mais tela branca */
+  class ErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { error: null }; }
+    static getDerivedStateFromError(error) { return { error }; }
+    componentDidCatch(error, info) {
+      console.error("[ErrorBoundary] erro:", error);
+      console.error("[ErrorBoundary] stack:", info && info.componentStack);
+    }
+    render() {
+      if (this.state.error) {
+        const e = this.state.error;
+        return html`<div style=${{
+          padding: 20, margin: 20, background: "#fee2e2", color: "#7f1d1d",
+          borderRadius: 12, fontFamily: "ui-monospace, Menlo, monospace",
+          fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word",
+          border: "2px solid #dc2626",
+        }}>
+          <div style=${{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>
+            ⚠️ Erro capturado — copie e me envie:
+          </div>
+          ${String(e && (e.stack || e.message) || e)}
+        </div>`;
+      }
+      return this.props.children;
+    }
+  }
 
   const MODE_TABS = [
     ["standard", "Padrão"],
@@ -35,8 +61,11 @@
       try { localStorage.setItem("calc-theme", theme); } catch {}
     }, [theme]);
 
-    /* Prévia em tempo real */
-    const preview = useMemo(() => previewEval(S.expr, S.angleMode), [S.expr, S.angleMode]);
+    const preview = useMemo(() => {
+      try { return previewEval(S.expr, S.angleMode); }
+      catch (err) { console.error("[preview]", err); return null; }
+    }, [S.expr, S.angleMode]);
+
     const lastGood = useRef(null);
     useEffect(() => { if (preview !== null) lastGood.current = preview; }, [preview]);
 
@@ -258,7 +287,6 @@
       setS((s) => ({ ...s, expr: h.expr, justEvaluated: false, error: null }));
     }, []);
 
-    /* Roteador de cliques */
     const handlePress = useCallback((raw) => {
       if (/^\d$/.test(raw)) return pressDigit(raw);
       switch (raw) {
@@ -293,19 +321,13 @@
         pressSquare, pressInverse, pressFactorial, pressConstant, toggleAngle,
         pressAns, pressMemory]);
 
-    /* Teclado físico */
     useEffect(() => {
       const onKeyDown = (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-  // Não sequestrar teclas quando o usuário está digitando em um campo
-  const el = e.target;
-  const tag = el && el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable)) {
-    return;
-  }
-
-  const k = e.key;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const el = e.target;
+        const tag = el && el.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable)) return;
+        const k = e.key;
         if (/^[0-9]$/.test(k)) { e.preventDefault(); pressDigit(k); return; }
         if (k === "." || k === ",") { e.preventDefault(); pressDot(); return; }
         if (k === "+") { e.preventDefault(); pressOperator("+"); return; }
@@ -325,7 +347,6 @@
     }, [pressDigit, pressDot, pressOperator, pressParen, pressPercent,
         pressEquals, pressBackspace, pressClear, pressCE]);
 
-    /* Copiar resultado */
     const copyResult = async () => {
       const text = preview !== null ? String(preview) : (displayValue !== null ? String(displayValue) : "");
       if (!text) return;
@@ -348,7 +369,6 @@
     const layout = mode === "scientific" ? SCIENTIFIC_LAYOUT : STANDARD_LAYOUT;
     const padClass = mode === "scientific" ? "pad pad-sci" : "pad pad-std";
 
-    /* ---------- Render ---------- */
     const displayBlock = html`
       <div className="display">
         <div className="display-meta">
@@ -481,10 +501,10 @@
     `;
   }
 
-  /* Render */
-  ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    html`<${ErrorBoundary}><${App} /></${ErrorBoundary}>`
+  );
 
-  /* PWA — só tenta registrar em http(s); em file:// é no-op silencioso */
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("sw.js").catch(() => {});
